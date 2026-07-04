@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Sync Simulator — Legacy vs AI Real-Time Engine</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<style>
+  :root{
+    --bg:#f6f5f1; --surface:#ffffff; --surface-2:#f1efe8;
+    --text:#26251f; --muted:#6b6a63; --hint:#9a988f; --border:#e3e1d8;
+    --accent:#185FA5; --accent-bg:#E6F1FB;
+    --danger:#A32D2D; --danger-bg:#FCEBEB;
+    --success:#3B6D11; --success-bg:#EAF3DE;
+    --purple:#534AB7; --purple-bg:#EEEDFE;
+    --radius:8px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1b1b19; --surface:#242420; --surface-2:#2c2c28;
+      --text:#f1efe8; --muted:#b4b2a9; --hint:#888780; --border:#3a3a35;
+      --accent:#85B7EB; --accent-bg:#0C447C;
+      --danger:#F09595; --danger-bg:#501313;
+      --success:#97C459; --success-bg:#173404;
+      --purple:#AFA9EC; --purple-bg:#26215C;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:var(--font); line-height:1.6;
+    -webkit-font-smoothing:antialiased; padding:28px 20px;}
+  .wrap{max-width:920px; margin:0 auto;}
+  h1{font-size:22px; font-weight:500; margin:0 0 2px;}
+  .sub{font-size:14px; color:var(--muted); margin:0 0 20px;}
+  .controls{display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap;}
+  .seg{display:flex; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+  button{font-family:var(--font); font-size:13px; padding:8px 14px; border:1px solid var(--border);
+    background:var(--surface); color:var(--text); border-radius:var(--radius); cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; transition:background .15s;}
+  button:hover{background:var(--surface-2);}
+  button:active{transform:scale(.98);}
+  .seg button{border:none; border-radius:0;}
+  .grid-top{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:12px; margin-bottom:12px;}
+  .panel{background:var(--surface-2); border-radius:12px; padding:16px;}
+  .lbl{font-size:13px; color:var(--hint); margin-bottom:2px;}
+  .big{font-size:34px; font-weight:500;}
+  .channels{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;}
+  .ch{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:8px;}
+  .ch .n{font-size:11px; color:var(--hint); display:flex; align-items:center; gap:4px;}
+  .ch .v{font-size:22px; font-weight:500;}
+  .ch .s{font-size:10px; color:var(--hint);}
+  .kpis{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin-bottom:12px;}
+  .kpi{background:var(--surface-2); border-radius:var(--radius); padding:10px 12px;}
+  .kpi .k{font-size:12px; color:var(--hint);}
+  .kpi .val{font-size:22px; font-weight:500;}
+  .chartbox{background:var(--surface-2); border-radius:12px; padding:14px 16px; margin-bottom:12px;}
+  .chartbox .t{font-size:12px; color:var(--hint); margin-bottom:8px; display:flex; align-items:center; gap:6px;}
+  .logbox{background:var(--surface-2); border-radius:12px; padding:12px 16px;}
+  .logbox .t{font-size:12px; color:var(--hint); margin-bottom:6px; display:flex; align-items:center; gap:6px;}
+  #log{font-family:var(--mono); font-size:12px; line-height:1.9; height:150px; overflow:hidden;}
+  #log i{margin-right:4px;}
+  .foot{font-size:12px; color:var(--hint); margin-top:18px; text-align:center;}
+  @media (max-width:640px){ .grid-top{grid-template-columns:1fr;} .kpis{grid-template-columns:repeat(3,1fr);} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Inventory sync simulator</h1>
+  <p class="sub">Same customer demand, two worlds: legacy batch sync vs an AI real-time engine. Problem statement 5,11 — cross-channel inventory lag.</p>
+
+  <div class="controls">
+    <div class="seg">
+      <button id="mLegacy" style="background:var(--danger-bg); color:var(--danger);">Legacy batch sync</button>
+      <button id="mAI" style="background:transparent; color:var(--muted);">AI real-time engine</button>
+    </div>
+    <button id="run"><i class="ti ti-player-play"></i> Start</button>
+    <button id="spike"><i class="ti ti-flame"></i> Festival spike</button>
+    <button id="reset"><i class="ti ti-refresh"></i> Reset</button>
+  </div>
+
+  <div class="grid-top">
+    <div class="panel">
+      <div class="lbl">Actual available stock</div>
+      <div style="display:flex; align-items:baseline; gap:8px;">
+        <span id="truth" class="big">40</span>
+        <span style="font-size:13px; color:var(--hint);">units · single source of truth</span>
+      </div>
+      <div id="forecastRow" style="font-size:12px; color:var(--hint); margin-top:8px; visibility:hidden;">
+        <i class="ti ti-chart-line"></i> AI forecast next window: <span id="forecast">–</span> units
+      </div>
+    </div>
+    <div class="panel">
+      <div class="lbl" style="margin-bottom:8px;">What each channel shows customers</div>
+      <div id="channels" class="channels"></div>
+    </div>
+  </div>
+
+  <div id="kpis" class="kpis"></div>
+
+  <div class="chartbox">
+    <div class="t"><i class="ti ti-chart-bar"></i> Fill rate over time (higher is better)</div>
+    <div id="chart" style="width:100%; height:120px;"></div>
+  </div>
+
+  <div class="logbox">
+    <div class="t"><i class="ti ti-list"></i> Event log</div>
+    <div id="log"></div>
+  </div>
+
+  <p class="foot">Conceptual simulation with illustrative numbers — demonstrates real-time sync, AI demand forecasting and automated replenishment. Not a model trained on real data.</p>
+</div>
+
+<script>
+(function(){
+  var PRICE=2000, START=40, REORDER=14, TARGET=44, SYNC_EVERY=5, TICK=750;
+  var chNames=["E-commerce","Store POS","Marketplace"];
+  var chIcons=["ti-shopping-cart","ti-building-store","ti-basket"];
+  var css=getComputedStyle(document.documentElement);
+  function c(v){return css.getPropertyValue(v).trim();}
+
+  var mode="legacy", running=false, timer=null, tick=0, emptyStreak=0, spikeQ=0;
+  var truth=START, shown=[START,START,START];
+  var k={att:0,fill:0,over:0,miss:0,lost:0};
+  var hist=[];
+
+  var elTruth=document.getElementById("truth"),
+      elForecast=document.getElementById("forecast"),
+      elForecastRow=document.getElementById("forecastRow"),
+      elCh=document.getElementById("channels"),
+      elK=document.getElementById("kpis"),
+      elLog=document.getElementById("log"),
+      mL=document.getElementById("mLegacy"), mA=document.getElementById("mAI"),
+      runBtn=document.getElementById("run"),
+      chartEl=document.getElementById("chart");
+
+  function log(msg,role){
+    var col= role==="bad"?c("--danger"): role==="good"?c("--success"): role==="ai"?c("--accent"):c("--muted");
+    var ic= role==="bad"?"ti-alert-triangle": role==="good"?"ti-check": role==="ai"?"ti-sparkles":"ti-point";
+    var line=document.createElement("div");
+    line.style.color=col;
+    line.innerHTML='<i class="ti '+ic+'"></i>'+msg;
+    elLog.insertBefore(line, elLog.firstChild);
+    while(elLog.childNodes.length>8) elLog.removeChild(elLog.lastChild);
+  }
+
+  function renderChannels(){
+    elCh.innerHTML="";
+    for(var i=0;i<3;i++){
+      var drift = mode==="legacy" && shown[i]>0 && truth===0;
+      var d=document.createElement("div");
+      d.className="ch";
+      if(drift){ d.style.background=c("--danger-bg"); }
+      var vcol=drift?c("--danger"):c("--text");
+      d.innerHTML='<div class="n"><i class="ti '+chIcons[i]+'"></i>'+chNames[i]+'</div>'+
+        '<div class="v" style="color:'+vcol+'">'+Math.round(shown[i])+'</div>'+
+        (drift?'<div class="s" style="color:'+c("--danger")+'">shows stock — none left</div>':'<div class="s">shown to buyers</div>');
+      elCh.appendChild(d);
+    }
+  }
+  function kpiCard(label,val,role){
+    var col= role==="bad"?c("--danger"): role==="good"?c("--success"):c("--text");
+    return '<div class="kpi"><div class="k">'+label+'</div><div class="val" style="color:'+col+'">'+val+'</div></div>';
+  }
+  function renderKpis(){
+    var fr = k.att? Math.round(100*k.fill/k.att):100;
+    elK.innerHTML =
+      kpiCard("Orders",k.att)+
+      kpiCard("Fulfilled",k.fill,"good")+
+      kpiCard("Oversells",k.over,k.over?"bad":null)+
+      kpiCard("Stockout misses",k.miss,k.miss?"bad":null)+
+      kpiCard("Fill rate",fr+"%",fr>=95?"good":(fr<85?"bad":null))+
+      kpiCard("Lost sales","$"+k.lost.toLocaleString(),k.lost?"bad":null);
+  }
+  function renderTop(){
+    elTruth.textContent=Math.round(truth);
+    elForecastRow.style.visibility= mode==="ai"?"visible":"hidden";
+  }
+
+  function drawChart(){
+    var W=chartEl.clientWidth||820, H=120, x0=34, pad=8;
+    var yFor=function(fr){ return H-pad-(H-2*pad)*(fr/100); };
+    var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" style="display:block; overflow:visible;">';
+    [0,50,100].forEach(function(p){
+      var y=yFor(p);
+      s+='<line x1="'+x0+'" y1="'+y+'" x2="'+W+'" y2="'+y+'" stroke="'+c("--border")+'" stroke-width="1"/>';
+      s+='<text x="'+(x0-6)+'" y="'+(y+3)+'" text-anchor="end" font-size="10" fill="'+c("--hint")+'">'+p+'%</text>';
+    });
+    if(hist.length>=2){
+      var n=hist.length, span=W-x0-2;
+      for(var i=0;i<n-1;i++){
+        var xa=x0+span*(i/(n-1)), xb=x0+span*((i+1)/(n-1));
+        var ya=yFor(hist[i].fr), yb=yFor(hist[i+1].fr);
+        var col=hist[i+1].mode==="ai"?c("--accent"):c("--danger");
+        s+='<line x1="'+xa+'" y1="'+ya+'" x2="'+xb+'" y2="'+yb+'" stroke="'+col+'" stroke-width="2" stroke-linecap="round"/>';
+      }
+    }
+    s+='</svg>';
+    chartEl.innerHTML=s;
+  }
+
+  function pushHist(){
+    var fr=k.att? Math.round(100*k.fill/k.att):100;
+    hist.push({fr:fr,mode:mode});
+    if(hist.length>80) hist.shift();
+    drawChart();
+  }
+  function renderAll(){ renderTop(); renderChannels(); renderKpis(); drawChart(); }
+
+  function sell(ch){
+    k.att++;
+    if(mode==="ai"){
+      shown=[truth,truth,truth];
+      if(truth>0){ truth--; shown=[truth,truth,truth]; k.fill++; }
+      else { k.miss++; k.lost+=PRICE; log("Out of stock on "+chNames[ch]+" — sale missed","bad"); }
+      return;
+    }
+    if(shown[ch]>0){
+      if(truth>0){ truth--; shown[ch]=Math.max(0,shown[ch]-1); k.fill++; }
+      else { k.over++; k.lost+=PRICE; log("Oversold on "+chNames[ch]+" — order can't be fulfilled","bad"); }
+    } else {
+      k.miss++; k.lost+=PRICE;
+      if(truth>0) log(chNames[ch]+" shows 0 while stock exists — missed sale","bad");
+    }
+  }
+
+  function step(){
+    tick++;
+    var orders=2+Math.floor(Math.random()*3);
+    if(spikeQ>0){ var take=Math.min(spikeQ,6); orders+=take; spikeQ-=take; }
+    for(var i=0;i<orders;i++) sell(Math.floor(Math.random()*3));
+
+    if(mode==="ai"){
+      var fc=12+Math.round(Math.random()*6)+(spikeQ>0?10:0);
+      elForecast.textContent=fc;
+      if(truth<=REORDER){ var add=TARGET-truth; truth+=add; log("AI auto-replenished +"+add+" ahead of forecast ("+fc+")","ai"); }
+      shown=[truth,truth,truth];
+    } else {
+      emptyStreak = truth===0? emptyStreak+1 : 0;
+      if(emptyStreak>=4){ truth=TARGET; emptyStreak=0; log("Manual reorder finally arrives — after the stockout","good"); }
+      if(tick%SYNC_EVERY===0){ shown=[truth,truth,truth]; log("Nightly batch sync — channels reconciled","plain"); }
+    }
+    renderAll(); pushHist();
+  }
+
+  function setMode(m){
+    mode=m;
+    if(m==="legacy"){
+      mL.style.background=c("--danger-bg"); mL.style.color=c("--danger");
+      mA.style.background="transparent"; mA.style.color=c("--muted");
+    } else {
+      mA.style.background=c("--accent-bg"); mA.style.color=c("--accent");
+      mL.style.background="transparent"; mL.style.color=c("--muted");
+      shown=[truth,truth,truth];
+    }
+    log("Switched to "+(m==="ai"?"AI real-time engine":"legacy batch sync"), m==="ai"?"ai":"plain");
+    renderAll();
+  }
+  function toggleRun(){
+    running=!running;
+    runBtn.innerHTML = running?'<i class="ti ti-player-pause"></i> Pause':'<i class="ti ti-player-play"></i> Start';
+    if(running) timer=setInterval(step,TICK); else clearInterval(timer);
+  }
+  function reset(){
+    clearInterval(timer); running=false;
+    runBtn.innerHTML='<i class="ti ti-player-play"></i> Start';
+    tick=0; emptyStreak=0; spikeQ=0; truth=START; shown=[START,START,START];
+    k={att:0,fill:0,over:0,miss:0,lost:0}; hist=[];
+    elLog.innerHTML=""; renderAll(); log("Simulation reset","plain");
+  }
+
+  mL.onclick=function(){setMode("legacy");};
+  mA.onclick=function(){setMode("ai");};
+  runBtn.onclick=toggleRun;
+  document.getElementById("reset").onclick=reset;
+  document.getElementById("spike").onclick=function(){ spikeQ+=10; log("Festival demand spike incoming (+10 orders)","plain"); };
+  window.addEventListener("resize",drawChart);
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
